@@ -7,16 +7,13 @@ import axios from 'axios';
   providedIn: 'root'
 })
 export class SmartNodeNetworkService {
-  private nodeObserver: Observable<any> = new Observable();
-  private nodeSubscriber: Subscriber<any> = new Subscriber();
-
   private nodes: Array<Node> = new  Array<Node>();
+  
   private node: Node = {
     operator: '',
     publicKey: '',
     url: ''
   };
-  private maxTrialsAllowed: number = 100;
 
   private network = {
     mainnet: [
@@ -87,15 +84,7 @@ export class SmartNodeNetworkService {
     ]
   };
 
-  constructor() {
-    this.nodeObserver = new Observable(subscriber => {
-      this.nodeSubscriber = subscriber;
-    });
-  }
-
-  getNodeObserver(): Observable<any> {
-    return this.nodeObserver;
-  }
+  constructor() {}
 
   public async setNetwork(network: 'mainnet' | 'testnet' | 'local'): Promise<boolean> {
     return new Promise(async(resolve, reject) => {
@@ -114,6 +103,14 @@ export class SmartNodeNetworkService {
         reject(error);
       }
     })
+  }
+
+  public shuffleNode(): void {
+    this.node = this.getRandomNode();
+  }
+
+  public setCurrentNode(node: Node): void {
+    this.node = node;
   }
 
   public getCurrentNode(): Node {
@@ -187,24 +184,9 @@ export class SmartNodeNetworkService {
             break;
         }
 
-        this.nodeSubscriber.next(this.node);
         resolve(response.data);
       } catch(error) {
-        // if it fails, we retry a certain amount of times...
-        if(trials < this.maxTrialsAllowed) {
-          // first we pick up a different node..
-          this.node = this.getRandomNode();
-          // then we recursively call the same endpoint once again...
-          try {
-            let response = await this.callApiEndpoint(type, endpoint, params, config, ++trials);
-            resolve(response);            
-          } catch(error) {
-            console.log("rejecting", error);
-            reject(error);
-          }
-        } else {
-          reject(error);
-        }
+        reject(error);
       }
     });
   }

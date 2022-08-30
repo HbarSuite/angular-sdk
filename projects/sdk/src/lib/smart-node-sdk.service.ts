@@ -13,7 +13,6 @@ import * as lodash from 'lodash';
 export class SmartNodeSdkService {
   private eventsObserver = new Subject<any>();
   private eventsObservable = this.eventsObserver.asObservable();
-  private hashpackWallet = null;
   
   constructor(
     private smartNodeNetworkService: SmartNodeNetworkService,
@@ -31,21 +30,7 @@ export class SmartNodeSdkService {
       this.smartNodeHashPackService.loadHashconnectData().then(async (hashconnectData) => {
         try {
           let message = await this._initSockets(hashconnectData);
-          this.hashpackWallet = lodash.get(hashconnectData.accountIds, 0);
-          console.log(message);
-          
-          // subscribing to the nodeObserver, to monitor if a node goes down, and the service switches to a new one...
-          this.smartNodeNetworkService.getNodeObserver().subscribe(async (node) => {
-            let mainSocket = this.smartNodeSocketsService.getMainSocket();
-            // if we received a notification, we check if the new node is different than the one used with the mainSocket...
-            if(mainSocket && mainSocket.getNode().operator != node.operator) {
-              // if the node has changed, we re-init the mainSocket to communicate with...
-              this.smartNodeSocketsService.initMainSocket(this.smartNodeNetworkService.getCurrentNode());
-              // and we re-establish a secure connection by initializing an new auth session...
-              await this.smartNodeSocketsService.initAuth(this.hashpackWallet, this.smartNodeNetworkService.getCurrentNode());
-              await this.smartNodeSocketsService.authorizeWallet();
-            }
-          });          
+          console.log(message);                    
         } catch(error) {
           console.error(error);
         }
@@ -57,7 +42,6 @@ export class SmartNodeSdkService {
       this.smartNodeHashPackService.observeHashpackConnection.subscribe(async (hashconnectData) => {
         try {
           let message = await this._initSockets(hashconnectData);
-          this.hashpackWallet = lodash.get(hashconnectData.accountIds, 0);
           console.log(message);
         } catch(error) {
           console.error(error);
@@ -152,7 +136,6 @@ export class SmartNodeSdkService {
    return new Promise(async(resolve, reject) => {
     try {
       await this.smartNodeSocketsService.init(
-        this.smartNodeNetworkService.getCurrentNode(),
         hashconnectData,
         (await this.smartNodeNetworkService.getNetwork()).data
       );

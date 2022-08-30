@@ -3,6 +3,7 @@ import { Observable, Subject } from 'rxjs';
 import { SmartNodeSocket } from './smart-socket/smart-socket.class';
 import { Node } from '../network/interfaces/node.interface';
 import * as lodash from 'lodash';
+import { SmartNodeNetworkService } from '../network/smart-node-network.service';
 
 @Injectable({
   providedIn: 'root'
@@ -15,16 +16,19 @@ export class SmartNodeSocketsService {
   private socketObservable = this.socketObserver.asObservable();
 
   private mainSocket: SmartNodeSocket;
+  private connectedWallet: string = '';
 
-  constructor() {}
+  constructor(
+    private smartNodeNetworkService: SmartNodeNetworkService
+  ) {}
 
-  async init(currentNode: Node, authSession: any, network: Array<Node>): Promise<void> {
+  async init(authSession: any, network: Array<Node>): Promise<void> {
     return new Promise(async(resolve, reject) => {
       try {
-        let wallet = lodash.get(authSession.accountIds, 0);
+        this.connectedWallet = lodash.get(authSession.accountIds, 0);
         
-        await this.initNodes(wallet, network);
-        await this.initAuth(wallet, currentNode);
+        await this.initNodes(network);
+        await this.initAuth();
        
         resolve();
       } catch(error) {
@@ -107,9 +111,9 @@ export class SmartNodeSocketsService {
     });
   }
   
-  async initAuth(wallet: string | null, currentNode: Node): Promise<boolean> {
+  async initAuth(): Promise<boolean> {
     return new Promise(async (resolve, reject) => {
-      this.mainSocket = this.initMainSocket(currentNode);
+      this.mainSocket = this.initMainSocket(this.smartNodeNetworkService.getCurrentNode());
 
       this.mainSocket.fromEvent('events').subscribe((message: any) => {
         this.socketObserver.next({
@@ -163,7 +167,7 @@ export class SmartNodeSocketsService {
             type: 'loading',
             data: {
               authResponse: authResponse,
-              wallet: wallet
+              wallet: this.connectedWallet
             }
           }
         });
@@ -173,7 +177,7 @@ export class SmartNodeSocketsService {
     });
   }
 
-  async initNodes(wallet: string | null, network: Array<Node>): Promise<Array<SmartNodeSocket>> {
+  async initNodes(network: Array<Node>): Promise<Array<SmartNodeSocket>> {
     return new Promise(async (resolve, reject) => {
       try {
         if (this.nodesSockets.length) {
@@ -186,25 +190,36 @@ export class SmartNodeSocketsService {
         this.nodesOnline = new Map<string, any>();
         
         network.forEach(node => {
-          let nodeSocket = new SmartNodeSocket(node, wallet);
+          let nodeSocket = new SmartNodeSocket(node, this.connectedWallet);
 
           this.nodesOnline.set(nodeSocket.getNode().operator, {
             node: nodeSocket.getNode(),
             online: false
           });
 
-          nodeSocket.on("connect", () => {
+          nodeSocket.on("connect", async() => {
             this.nodesOnline.set(nodeSocket.getNode().operator, {
               node: nodeSocket.getNode(),
               online: true
             });
           });
 
-          nodeSocket.on("disconnect", () => {
+          nodeSocket.on("disconnect", async() => {
             this.nodesOnline.set(nodeSocket.getNode().operator, {
               node: nodeSocket.getNode(),
               online: false
             });
+
+            // if the disconnected socket is the main socket we're operating with,
+            // we shall renew a socket connection with a different node automatically...
+            if(nodeSocket.getNode().operator == this.mainSocket.getNode().operator) {
+              // first, we setup a new random node from the network...
+              this.smartNodeNetworkService.shuffleNode();
+
+              // then we re-establish a secure connection by initializing an new auth session...
+              await this.initAuth();
+              await this.authorizeWallet();
+            }
           });
 
           nodeSocket.connect();
